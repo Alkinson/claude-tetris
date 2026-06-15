@@ -1,0 +1,73 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+# Cancel in-progress runs if the user edits the issue multiple times quickly
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Only run for human edits — when Claude edits the body it triggers 'edited' with
+    # sender.type == 'Bot', which would cause an infinite loop without this guard.
+    if: github.event.sender.type != 'Bot'
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write    # edit body, apply labels, create labels
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Triage issue with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowed-tools "Bash(gh issue view *),Bash(gh issue edit *),Bash(gh label list*),Bash(gh label create *),Read,Grep,Glob"'
+          prompt: |
+            You are triaging GitHub issue #${{ github.event.issue.number }} in repository ${{ github.repository }}.
+
+            Follow these steps in order:
+
+            1. Read the full issue:
+               gh issue view ${{ github.event.issue.number }} --json title,body,labels
+
+            2. Explore the codebase to ground your analysis. The project is a browser Tetris game with three files:
+               - game.js  — all game logic (~300 lines)
+               - index.html — DOM structure
+               - style.css — styling
+               Read the relevant file(s) based on what the issue describes.
+
+            3. Determine appropriate labels:
+               gh label list
+               - Use existing labels when they fit.
+               - If no existing label fits, create a new one:
+                 gh label create "<name>" --description "<one-line description>" --color "<6-digit hex without #>"
+               Apply the chosen label(s):
+               gh issue edit ${{ github.event.issue.number }} --add-label "<label1>,<label2>"
+
+            4. Build a diagnosis block in English using this exact format:
+
+               <!-- CLAUDE-DIAGNOSIS:START -->
+               ## 🤖 Claude Diagnosis
+               **Summary:** <one-line restatement of the problem>
+               **Probable cause / area:** <which part of the code or feature is involved>
+               **Affected files:** <e.g. game.js (lockPiece), index.html>
+               **Suggested approach:** <high-level steps to implement a fix — no code yet>
+               **Open questions:** <anything ambiguous, or "none">
+               <!-- CLAUDE-DIAGNOSIS:END -->
+
+            5. Update the issue body: preserve EVERYTHING the user wrote, then append or replace the
+               diagnosis block at the very end (between the markers). Never delete user content.
+
+               Fetch the current body first, strip any existing block between the markers, then append
+               the new block. Finally run:
+               gh issue edit ${{ github.event.issue.number }} --body "<full updated body>"
