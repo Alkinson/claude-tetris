@@ -4,17 +4,99 @@ const COLS = 10;
 const ROWS = 20;
 const BLOCK = 30;
 
-const COLORS = [
-  null,
-  '#4dd0e1', // I - cyan
-  '#ffd54f', // O - yellow
-  '#ba68c8', // T - purple
-  '#81c784', // S - green
-  '#e57373', // Z - red
-  '#90caf9', // J - pale blue
-  '#ffb74d', // L - orange
-  '#b0bec5', // Nut - steel gray
-];
+const THEMES = {
+  retro: {
+    id: 'retro',
+    name: 'Retro',
+    colors: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#90caf9', '#ffb74d', '#b0bec5'],
+    boardBg: '#1a1a25',
+    gridColor: '#22222e',
+    drawBlock: null,
+  },
+  neon: {
+    id: 'neon',
+    name: 'Neon',
+    colors: [null, '#00ffff', '#ffff00', '#ff00ff', '#00ff88', '#ff2244', '#4488ff', '#ff8800', '#aaaaaa'],
+    boardBg: '#000000',
+    gridColor: '#111111',
+    drawBlock(ctx, x, y, colorIndex, size, alpha) {
+      if (!colorIndex) return;
+      const color = THEMES.neon.colors[colorIndex];
+      ctx.globalAlpha = alpha ?? 1;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = color;
+      ctx.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    },
+  },
+  pastel: {
+    id: 'pastel',
+    name: 'Pastel',
+    colors: [null, '#b2ebf2', '#fff9c4', '#e1bee7', '#c8e6c9', '#ffcdd2', '#bbdefb', '#ffe0b2', '#cfd8dc'],
+    boardBg: '#f8f0ff',
+    gridColor: '#e0d8f0',
+    drawBlock(ctx, x, y, colorIndex, size, alpha) {
+      if (!colorIndex) return;
+      const color = THEMES.pastel.colors[colorIndex];
+      ctx.globalAlpha = alpha ?? 1;
+      ctx.fillStyle = color;
+      const px = x * size + 1;
+      const py = y * size + 1;
+      const w = size - 2;
+      const h = size - 2;
+      const r = 5;
+      ctx.beginPath();
+      ctx.moveTo(px + r, py);
+      ctx.lineTo(px + w - r, py);
+      ctx.quadraticCurveTo(px + w, py, px + w, py + r);
+      ctx.lineTo(px + w, py + h - r);
+      ctx.quadraticCurveTo(px + w, py + h, px + w - r, py + h);
+      ctx.lineTo(px + r, py + h);
+      ctx.quadraticCurveTo(px, py + h, px, py + h - r);
+      ctx.lineTo(px, py + r);
+      ctx.quadraticCurveTo(px, py, px + r, py);
+      ctx.closePath();
+      ctx.fill();
+      // soft highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillRect(px + 2, py + 2, w - 4, 3);
+      ctx.globalAlpha = 1;
+    },
+  },
+  pixel: {
+    id: 'pixel',
+    name: 'Pixel Art',
+    colors: [null, '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#90caf9', '#ffb74d', '#b0bec5'],
+    boardBg: '#0a0a0a',
+    gridColor: '#1a1a1a',
+    drawBlock(ctx, x, y, colorIndex, size, alpha) {
+      if (!colorIndex) return;
+      const color = THEMES.pixel.colors[colorIndex];
+      ctx.globalAlpha = alpha ?? 1;
+      const px = x * size;
+      const py = y * size;
+      ctx.fillStyle = color;
+      ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
+      // dark top/left border
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(px + 1, py + 1, size - 2, 1);
+      ctx.fillRect(px + 1, py + 1, 1, size - 2);
+      // light bottom/right highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(px + 1, py + size - 2, size - 2, 1);
+      ctx.fillRect(px + size - 2, py + 1, 1, size - 2);
+      // corner pixel dots
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(px + 2, py + 2, 2, 2);
+      ctx.fillRect(px + size - 4, py + 2, 2, 2);
+      ctx.fillRect(px + 2, py + size - 4, 2, 2);
+      ctx.fillRect(px + size - 4, py + size - 4, 2, 2);
+      ctx.globalAlpha = 1;
+    },
+  },
+};
 
 const PIECES = [
   null,
@@ -41,8 +123,10 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const skinSelect = document.getElementById('skin-select');
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let currentTheme = 'retro';
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -160,7 +244,13 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const theme = THEMES[currentTheme];
+  if (theme.drawBlock) {
+    theme.drawBlock(context, x, y, colorIndex, size, alpha);
+    return;
+  }
+  // default implementation
+  const color = theme.colors[colorIndex];
   context.globalAlpha = alpha ?? 1;
   context.fillStyle = color;
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
@@ -171,7 +261,7 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = THEMES[currentTheme].gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -188,7 +278,9 @@ function drawGrid() {
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // fill background for current theme (overrides CSS background)
+  ctx.fillStyle = THEMES[currentTheme].boardBg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawGrid();
 
   // board
@@ -211,7 +303,8 @@ function draw() {
 
 function drawNext() {
   const NB = 30;
-  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  nextCtx.fillStyle = THEMES[currentTheme].boardBg;
+  nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
   const shape = next.shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
@@ -303,5 +396,20 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+
+skinSelect.addEventListener('change', () => {
+  currentTheme = skinSelect.value;
+  try { localStorage.setItem('tetris.skin', currentTheme); } catch {}
+  draw();
+  drawNext();
+});
+
+try {
+  const saved = localStorage.getItem('tetris.skin');
+  if (saved && THEMES[saved]) {
+    currentTheme = saved;
+    skinSelect.value = saved;
+  }
+} catch {}
 
 init();
